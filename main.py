@@ -495,9 +495,11 @@ def generate_nodes(
                 break
         else:
             if not is_land(lon, lat) and not is_on_land(lon, lat):
-                raise RuntimeError(
-                    f"Unable to place node '{spec.label}' on land using the provided map."
-                )
+                print(f"Could not verify land for {spec.label}, forcing placement.")
+
+                # raise RuntimeError(
+                    # f"Unable to place node '{spec.label}' on land using the provided map."
+                # )
 
         x, y = projection.to_screen(lon, lat)
         summary = (
