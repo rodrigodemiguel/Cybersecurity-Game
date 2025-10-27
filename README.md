@@ -4,13 +4,11 @@ This repository contains a minimal prototype for an educational cyber-defense st
 
 ## Features
 
-- World map background supplied via `assets/world_map.png`, scaled beneath an on-screen navigation bar with regional labels.
-- Ten curated device nodes anchored to real-world metropolitan hubs with land-validated placement.
-- Each node exposes unique metadata (device class, connectivity mix, focus area) and displays it on hover.
-- Visible network links trace sensible connectivity paths (municipal Wi-Fi, VPN tunnels, fiber), color-coded green/red and annotated on hover.
-- Infection begins from a single node and propagates across connected devices every update tick.
-- Heads-up display tracks secure vs. infected counts alongside an estimated network integrity percentage.
-- Top-level UI buttons open expandable panels, including an interactive upgrade skill tree with persistent unlocks.
+- High-contrast world map background derived from traced landmass polygons with regional labels.
+- ~3,000 device nodes distributed according to weighted global population hubs and constrained to sit on land.
+- Each node tracks device type and infection state.
+- Infection begins from a single node and propagates across nearby, similar devices every update tick.
+- Heads-up display shows secure vs. infected device counts.
 
 ## Requirements
 
