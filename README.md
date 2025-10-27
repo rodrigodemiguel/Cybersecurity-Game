@@ -1,28 +1,37 @@
-# Cybersecurity-Game
+# 🧠 Cybersecurity Game
 
-This repository contains a minimal prototype for an educational cyber-defense strategy game inspired by _Plague Inc._. The current build visualizes a simplified global device network where a malware outbreak spreads over time.
+An educational, strategy-based cybersecurity simulation inspired by *Plague Inc.*  
+Players must defend a connected digital world from a spreading cyber infection by deploying firewalls, patches, scans, and awareness campaigns.
 
-## Features
+Developed for the **Cyber Education for Teens Hackathon**, this project aims to make cybersecurity learning fun, visual, and interactive for 16-year-olds with general tech knowledge.
 
-- Simplified world map with labeled regions.
-- ~3,000 device nodes distributed according to rough population density.
-- Each node tracks device type and infection state.
-- Infection begins from a single node and propagates across nearby, similar devices every update tick.
-- Heads-up display shows secure vs. infected device counts.
+---
 
-## Requirements
+## 🎯 Concept Overview
 
-- Python 3.9+
-- [pygame](https://www.pygame.org/) (`pip install pygame`)
+In this game, the world is represented as a network of connected devices:
+- **IoT devices**, **computers**, **servers**, and **smartphones** are distributed across the world based on real population density.
+- A **digital virus** starts at one random node and spreads across connections.
+- Players will later act as defenders, containing the infection through cybersecurity strategies such as:
+  - Patching vulnerabilities  
+  - Deploying firewalls  
+  - Scanning for intrusions  
+  - Training user awareness  
 
-## Running the prototype
+This repository contains multiple branches representing different development stages and prototypes (e.g., Codex-generated versions, defense-mode builds, and simulation logic).
+
+---
+
+## 🧩 Cloning the Repository
+
+To get all branches and ensure you have the latest code on your local machine:
 
 ```bash
-python3 main.py
-```
+# 1️⃣ Clone the repository
+git clone https://github.com/rodrigodemiguel/Cybersecurity-Game.git
 
-Close the window or press `Alt+F4`/`Cmd+W` to quit the simulation.
+# 2️⃣ Enter the project directory
+cd Cybersecurity-Game
 
-## Next steps
-
-Future iterations can add defensive mechanics such as patch deployment, firewalls, or player-triggered scans. The current code base is organized so that additional node states and actions can be layered onto the existing update loop.
+# 3️⃣ Fetch all remote branches (important!)
+git fetch --all
