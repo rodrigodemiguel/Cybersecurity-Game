@@ -30,8 +30,8 @@ from map_polygons import LAND_POLYGONS
 SEED = 42
 WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
-NODE_COUNT = 50
-CONNECTION_RADIUS = 120  # pixels
+NODE_COUNT = 10
+CONNECTION_RADIUS = 120  # pixels used when weighting infection odds
 UPDATE_INTERVAL = 0.6  # seconds between infection ticks
 MAX_INFECTION_ATTEMPTS = 4
 BACKGROUND_COLOR = (13, 21, 34)
@@ -44,140 +44,246 @@ UPGRADE_STARTING_POINTS = 10
 UPGRADE_NODE_RADIUS = 28
 MAP_IMAGE_PATH = Path("assets/world_map.png")
 
-NODE_TYPE_DISTRIBUTION: Dict[str, float] = {
-    "phone": 0.35,
-    "computer": 0.3,
-    "iot": 0.2,
-    "server": 0.15,
-}
+CONNECTION_SECURE_COLOR = (96, 186, 150)
+CONNECTION_COMPROMISED_COLOR = (210, 84, 84)
 
-# Major population hubs used for weighted sampling when seeding devices.
 @dataclass(frozen=True)
-class PopulationCenter:
-    name: str
+class ScenarioNodeSpec:
+    label: str
+    device_type: str
     latitude: float
     longitude: float
-    weight: float
-    lat_spread: float = 3.0
-    lon_spread: float = 5.0
+    region: str
+    location: str
+    role: str
+    connectivity: Tuple[str, ...]
+    lat_jitter: float = 0.35
+    lon_jitter: float = 0.45
 
 
-# Weighted list of major population hubs used to seed device placement. The
-# spreads are in degrees and keep the jitter anchored to recognizable regions.
-POPULATION_CENTERS: Sequence[PopulationCenter] = (
-    # North America
-    PopulationCenter("US East Coast", 40.0, -74.0, 0.055, lat_spread=3.5, lon_spread=4.5),
-    PopulationCenter("US West Coast", 37.5, -122.0, 0.032, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("US Midwest", 41.5, -88.0, 0.028, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("US South", 33.0, -84.0, 0.025, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("Canada East", 46.5, -71.0, 0.018, lat_spread=3.0, lon_spread=6.0),
-    PopulationCenter("Canada West", 53.0, -113.0, 0.014, lat_spread=4.0, lon_spread=5.0),
-    PopulationCenter("Mexico City", 19.4, -99.1, 0.022, lat_spread=2.5, lon_spread=3.5),
-    PopulationCenter("Central America", 14.3, -90.5, 0.012, lat_spread=2.0, lon_spread=3.0),
-    # South America
-    PopulationCenter("Brazil Southeast", -23.5, -46.6, 0.04, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("Brazil Northeast", -8.0, -34.9, 0.018, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("Argentina", -34.6, -58.4, 0.017, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("Peru", -12.0, -77.0, 0.015, lat_spread=2.5, lon_spread=3.5),
-    PopulationCenter("Colombia", 4.6, -74.1, 0.015, lat_spread=2.5, lon_spread=3.5),
-    # Europe
-    PopulationCenter("UK", 53.0, -1.5, 0.028, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("France / Benelux", 49.5, 2.0, 0.034, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("Central Europe", 48.0, 16.0, 0.034, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("Iberia", 40.0, -3.0, 0.022, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("Italy", 42.5, 12.5, 0.022, lat_spread=2.5, lon_spread=2.5),
-    PopulationCenter("Eastern Europe", 52.0, 20.0, 0.03, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("Scandinavia", 59.5, 18.0, 0.015, lat_spread=4.0, lon_spread=4.0),
-    PopulationCenter("European Russia", 56.0, 38.0, 0.032, lat_spread=3.5, lon_spread=6.0),
-    # Africa & Middle East
-    PopulationCenter("North Africa", 31.0, 31.0, 0.032, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("West Africa", 6.0, -1.5, 0.028, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("Nigeria", 9.0, 7.4, 0.026, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("East Africa", 1.0, 37.0, 0.027, lat_spread=3.5, lon_spread=4.0),
-    PopulationCenter("Ethiopia", 9.0, 39.0, 0.016, lat_spread=2.5, lon_spread=3.0),
-    PopulationCenter("Southern Africa", -26.0, 28.0, 0.026, lat_spread=3.5, lon_spread=4.5),
-    PopulationCenter("Turkey", 39.0, 35.0, 0.019, lat_spread=2.5, lon_spread=3.0),
-    PopulationCenter("Persian Gulf", 25.0, 55.0, 0.015, lat_spread=2.5, lon_spread=3.5),
-    PopulationCenter("Iran", 35.7, 52.3, 0.02, lat_spread=3.0, lon_spread=3.5),
-    # South & Central Asia
-    PopulationCenter("Pakistan", 31.5, 74.3, 0.028, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("North India", 27.0, 77.0, 0.065, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("West India", 19.0, 73.0, 0.055, lat_spread=2.5, lon_spread=3.0),
-    PopulationCenter("South India", 13.0, 80.0, 0.04, lat_spread=2.5, lon_spread=3.0),
-    PopulationCenter("Bangladesh", 23.7, 90.3, 0.026, lat_spread=2.0, lon_spread=2.5),
-    PopulationCenter("Sri Lanka", 7.3, 80.7, 0.006, lat_spread=1.2, lon_spread=1.2),
-    PopulationCenter("Nepal", 27.7, 85.3, 0.01, lat_spread=1.8, lon_spread=2.0),
-    PopulationCenter("Myanmar", 18.0, 96.0, 0.018, lat_spread=3.0, lon_spread=3.5),
-    # East Asia
-    PopulationCenter("Central China", 34.0, 113.0, 0.08, lat_spread=3.5, lon_spread=4.5),
-    PopulationCenter("Northern China", 40.5, 116.5, 0.06, lat_spread=3.0, lon_spread=3.5),
-    PopulationCenter("Southern China", 23.5, 113.0, 0.07, lat_spread=3.0, lon_spread=3.5),
-    PopulationCenter("Sichuan Basin", 30.5, 104.0, 0.045, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("Northeast China", 44.0, 125.0, 0.03, lat_spread=3.0, lon_spread=3.5),
-    PopulationCenter("Korean Peninsula", 37.5, 127.0, 0.028, lat_spread=2.5, lon_spread=2.5),
-    PopulationCenter("Japan", 35.5, 138.5, 0.032, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("Taiwan", 24.0, 121.0, 0.01, lat_spread=1.8, lon_spread=2.0),
-    PopulationCenter("Hong Kong / Pearl River", 22.8, 114.2, 0.018, lat_spread=1.8, lon_spread=2.2),
-    # Southeast Asia & Oceania
-    PopulationCenter("Vietnam", 16.0, 107.0, 0.022, lat_spread=3.0, lon_spread=3.0),
-    PopulationCenter("Thailand", 13.5, 101.0, 0.018, lat_spread=2.5, lon_spread=2.5),
-    PopulationCenter("Malaysia / Singapore", 3.0, 101.5, 0.016, lat_spread=2.0, lon_spread=2.5),
-    PopulationCenter("Indonesia West", -5.0, 106.0, 0.028, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("Indonesia East", -3.0, 121.0, 0.02, lat_spread=3.0, lon_spread=4.0),
-    PopulationCenter("Philippines", 14.5, 121.0, 0.022, lat_spread=2.5, lon_spread=3.0),
-    PopulationCenter("New Guinea", -4.5, 144.0, 0.012, lat_spread=3.0, lon_spread=3.5),
-    PopulationCenter("Australia East", -27.0, 134.0, 0.02, lat_spread=4.0, lon_spread=5.0),
-    PopulationCenter("Australia West", -31.5, 118.0, 0.01, lat_spread=4.0, lon_spread=5.0),
-    PopulationCenter("New Zealand", -41.0, 174.0, 0.006, lat_spread=2.5, lon_spread=3.0),
+@dataclass(frozen=True)
+class ScenarioConnectionSpec:
+    source: int
+    target: int
+    medium: str
+    description: str
+
+
+SCENARIO_NODE_SPECS: Tuple[ScenarioNodeSpec, ...] = (
+    ScenarioNodeSpec(
+        label="Madrid Civic Phones",
+        device_type="phone",
+        latitude=40.4168,
+        longitude=-3.7038,
+        region="Spain",
+        location="Madrid",
+        role="Commuters checking transit updates through the municipal network.",
+        connectivity=("Municipal Wi-Fi", "LTE", "Bluetooth"),
+        lat_jitter=0.25,
+        lon_jitter=0.35,
+    ),
+    ScenarioNodeSpec(
+        label="Barcelona Smart Home Hub",
+        device_type="iot",
+        latitude=41.3874,
+        longitude=2.1686,
+        region="Spain",
+        location="Barcelona",
+        role="Controls apartment climate sensors and lighting automations.",
+        connectivity=("Fiber Uplink", "Zigbee", "Wi-Fi"),
+        lat_jitter=0.25,
+        lon_jitter=0.35,
+    ),
+    ScenarioNodeSpec(
+        label="Valencia Remote Offices",
+        device_type="computer",
+        latitude=39.4699,
+        longitude=-0.3763,
+        region="Spain",
+        location="Valencia",
+        role="Analysts tunneling into headquarters through managed VPN desks.",
+        connectivity=("Enterprise Wi-Fi", "Ethernet", "VPN Client"),
+        lat_jitter=0.25,
+        lon_jitter=0.35,
+    ),
+    ScenarioNodeSpec(
+        label="Seville Hospital IoT",
+        device_type="iot",
+        latitude=37.3891,
+        longitude=-5.9845,
+        region="Spain",
+        location="Seville",
+        role="Monitors critical care vitals from connected medical devices.",
+        connectivity=("Secured Wi-Fi", "Bluetooth", "Zigbee"),
+        lat_jitter=0.25,
+        lon_jitter=0.35,
+    ),
+    ScenarioNodeSpec(
+        label="Bilbao Esports PCs",
+        device_type="computer",
+        latitude=43.2630,
+        longitude=-2.9350,
+        region="Spain",
+        location="Bilbao",
+        role="High-end rigs scrimming via low-latency competitive ladders.",
+        connectivity=("Fiber LAN", "Wi-Fi 6", "Bluetooth"),
+        lat_jitter=0.25,
+        lon_jitter=0.35,
+    ),
+    ScenarioNodeSpec(
+        label="Lisbon Regional Data Center",
+        device_type="server",
+        latitude=38.7223,
+        longitude=-9.1393,
+        region="Portugal",
+        location="Lisbon",
+        role="Hosts SaaS workloads for Iberian customers with redundancy.",
+        connectivity=("Fiber Backbone", "VPN Gateway", "SSH"),
+        lat_jitter=0.25,
+        lon_jitter=0.35,
+    ),
+    ScenarioNodeSpec(
+        label="Frankfurt VPN Gateway",
+        device_type="server",
+        latitude=50.1109,
+        longitude=8.6821,
+        region="Germany",
+        location="Frankfurt",
+        role="Aggregates secure tunnels for European enterprise tenants.",
+        connectivity=("MPLS Backbone", "VPN Concentrator", "SSH"),
+        lat_jitter=0.3,
+        lon_jitter=0.3,
+    ),
+    ScenarioNodeSpec(
+        label="Dublin CDN Relay",
+        device_type="server",
+        latitude=53.3498,
+        longitude=-6.2603,
+        region="Ireland",
+        location="Dublin",
+        role="Caches media assets before distributing to Atlantic audiences.",
+        connectivity=("Peered Fiber", "HTTPS", "SSH"),
+        lat_jitter=0.3,
+        lon_jitter=0.3,
+    ),
+    ScenarioNodeSpec(
+        label="New York Trading Desk",
+        device_type="computer",
+        latitude=40.7128,
+        longitude=-74.0060,
+        region="United States",
+        location="New York City",
+        role="Risk models syncing with European exchanges pre-market.",
+        connectivity=("Private Fiber", "VPN Client", "SSH"),
+        lat_jitter=0.3,
+        lon_jitter=0.3,
+    ),
+    ScenarioNodeSpec(
+        label="Tokyo Streaming Cluster",
+        device_type="server",
+        latitude=35.6762,
+        longitude=139.6503,
+        region="Japan",
+        location="Tokyo",
+        role="Origin streaming nodes serving Asia-Pacific subscribers.",
+        connectivity=("Transpacific Fiber", "HTTPS", "SSH"),
+        lat_jitter=0.3,
+        lon_jitter=0.3,
+    ),
 )
 
-POPULATION_WEIGHT_TOTAL = sum(center.weight for center in POPULATION_CENTERS)
 
-
-CONNECTIVITY_OPTIONS: Dict[str, Tuple[str, ...]] = {
-    "phone": ("Wi-Fi", "LTE", "Bluetooth"),
-    "computer": ("Ethernet", "Wi-Fi", "SSH"),
-    "iot": ("Wi-Fi", "LoRa", "Bluetooth", "Zigbee"),
-    "server": ("Ethernet", "SSH", "VPN"),
-}
-
-NODE_ADJECTIVES: Tuple[str, ...] = (
-    "Azure",
-    "Crimson",
-    "Ivory",
-    "Onyx",
-    "Silver",
-    "Golden",
-    "Umber",
-    "Verdant",
-    "Cobalt",
-    "Amber",
-)
-
-NODE_NOUNS: Tuple[str, ...] = (
-    "Sentinel",
-    "Relay",
-    "Anchor",
-    "Beacon",
-    "Array",
-    "Node",
-    "Matrix",
-    "Hub",
-    "Gate",
-    "Bastion",
-)
-
-NODE_TRAITS: Tuple[str, ...] = (
-    "Proactive phishing detection routines",
-    "Legacy firmware awaiting a vendor patch",
-    "Mission-critical analytics workload",
-    "External-facing services hardened against scans",
-    "Remote workforce access concentrator",
-    "Edge compute platform aggregating IoT telemetry",
-    "High-availability cluster guarding transactional data",
-    "Development sandbox with relaxed policies",
-    "Customer identity and access broker",
-    "Automation controller for smart infrastructure",
+SCENARIO_CONNECTION_SPECS: Tuple[ScenarioConnectionSpec, ...] = (
+    ScenarioConnectionSpec(
+        source=0,
+        target=1,
+        medium="Municipal Wi-Fi Mesh",
+        description="Madrid transit handsets join the Barcelona smart-home mesh when riders visit family.",
+    ),
+    ScenarioConnectionSpec(
+        source=0,
+        target=2,
+        medium="VPN App",
+        description="Phones pivot through the Valencia remote work gateway during after-hours check-ins.",
+    ),
+    ScenarioConnectionSpec(
+        source=1,
+        target=3,
+        medium="Secure Zigbee Bridge",
+        description="Hospital sensors receive environment updates from Barcelona apartment automation experts.",
+    ),
+    ScenarioConnectionSpec(
+        source=1,
+        target=5,
+        medium="HTTPS Telemetry",
+        description="Smart home dashboards forward anonymized metrics into Lisbon's SaaS analytics stack.",
+    ),
+    ScenarioConnectionSpec(
+        source=2,
+        target=5,
+        medium="Enterprise Fiber",
+        description="Valencia analysts push daily reports into the Lisbon data center's staging clusters.",
+    ),
+    ScenarioConnectionSpec(
+        source=2,
+        target=6,
+        medium="Managed VPN",
+        description="Remote employees rely on Frankfurt's hardened concentrator for privileged access.",
+    ),
+    ScenarioConnectionSpec(
+        source=3,
+        target=4,
+        medium="Arena LAN",
+        description="Regional esports scrims share match telemetry between Seville and Bilbao arenas.",
+    ),
+    ScenarioConnectionSpec(
+        source=3,
+        target=5,
+        medium="Clinical Sync",
+        description="Seville's hospital charts replicate nightly into Lisbon's redundant data stores.",
+    ),
+    ScenarioConnectionSpec(
+        source=4,
+        target=5,
+        medium="Low-Latency Fiber",
+        description="Bilbao gaming rigs warm their caches from Lisbon to reduce tournament lag.",
+    ),
+    ScenarioConnectionSpec(
+        source=5,
+        target=6,
+        medium="EU Backbone Peering",
+        description="Lisbon and Frankfurt exchange telemetry to balance demand across EU tenants.",
+    ),
+    ScenarioConnectionSpec(
+        source=5,
+        target=7,
+        medium="Content Distribution",
+        description="Lisbon's cache preloads media to Dublin before North American prime-time.",
+    ),
+    ScenarioConnectionSpec(
+        source=6,
+        target=8,
+        medium="Risk Tunnel",
+        description="Frankfurt analytics feed New York trading desks ahead of opening bells.",
+    ),
+    ScenarioConnectionSpec(
+        source=6,
+        target=9,
+        medium="Threat Intel Share",
+        description="Frankfurt relays credential stuffing indicators directly to Tokyo's SOC cluster.",
+    ),
+    ScenarioConnectionSpec(
+        source=7,
+        target=8,
+        medium="CDN Bridge",
+        description="Dublin mirrors highlight videos into Manhattan for overnight streaming bursts.",
+    ),
+    ScenarioConnectionSpec(
+        source=8,
+        target=9,
+        medium="Peered VPN",
+        description="New York and Tokyo coordinate DRM keys for simultaneous content launches.",
+    ),
 )
 
 
@@ -216,30 +322,6 @@ def create_land_classifier(surface: pygame.Surface) -> Callable[[float, float], 
     return combined
 
 
-def generate_node_metadata(
-    rng: random.Random, idx: int, device_type: str, region_name: str
-) -> Tuple[str, Tuple[str, ...], str]:
-    adjective = NODE_ADJECTIVES[idx % len(NODE_ADJECTIVES)]
-    noun = NODE_NOUNS[(idx * 3) % len(NODE_NOUNS)]
-    label = f"{adjective} {noun} #{idx + 1}"
-
-    possible_connectivity = CONNECTIVITY_OPTIONS[device_type]
-    max_links = min(3, len(possible_connectivity))
-    sample_count = rng.randint(1, max_links)
-    connections = tuple(sorted(rng.sample(possible_connectivity, k=sample_count)))
-
-    trait_index = (idx * 5 + rng.randint(0, len(NODE_TRAITS) - 1)) % len(NODE_TRAITS)
-    trait = NODE_TRAITS[trait_index]
-    summary = (
-        f"Type: {device_type.title()}\n"
-        f"Connectivity: {', '.join(connections)}\n"
-        f"Region: {region_name}\n"
-        f"Focus: {trait}"
-    )
-
-    return label, connections, summary
-
-
 @dataclass(slots=True)
 class Node:
     """Represents a single device in the network."""
@@ -247,11 +329,23 @@ class Node:
     id: int
     x: float
     y: float
+    latitude: float
+    longitude: float
+    region: str
+    location: str
     device_type: str
     connectivity: Tuple[str, ...]
     label: str
     summary: str
     state: str = "secure"
+
+
+@dataclass(slots=True)
+class Connection:
+    source: int
+    target: int
+    medium: str
+    description: str
 
 
 @dataclass(frozen=True)
@@ -332,18 +426,6 @@ def build_menu_buttons() -> List[MenuButton]:
         buttons.append(MenuButton(label=label, key=key, rect=rect))
         x += width
     return buttons
-
-
-def seeded_random_choice(rng: random.Random, distribution: Dict[str, float]) -> str:
-    roll = rng.random()
-    cumulative = 0.0
-    for key, weight in distribution.items():
-        cumulative += weight
-        if roll <= cumulative:
-            return key
-    return next(reversed(distribution))
-
-
 def _point_in_polygon(lon: float, lat: float, polygon: Sequence[Tuple[float, float]]) -> bool:
     inside = False
     x, y = lon, lat
@@ -367,18 +449,6 @@ def is_on_land(lon: float, lat: float) -> bool:
         if _point_in_polygon(lon, lat, polygon):
             return True
     return False
-
-
-def choose_population_center(rng: random.Random) -> PopulationCenter:
-    roll = rng.random() * POPULATION_WEIGHT_TOTAL
-    cumulative = 0.0
-    for center in POPULATION_CENTERS:
-        cumulative += center.weight
-        if roll <= cumulative:
-            return center
-    return POPULATION_CENTERS[-1]
-
-
 @dataclass(frozen=True)
 class Projection:
     map_width: float
@@ -403,75 +473,82 @@ class Projection:
 def generate_nodes(
     rng: random.Random, projection: Projection, is_land: Callable[[float, float], bool]
 ) -> List[Node]:
-    nodes: List[Node] = []
+    if len(SCENARIO_NODE_SPECS) != NODE_COUNT:
+        raise ValueError(
+            "Scenario configuration mismatch: expected "
+            f"{NODE_COUNT} nodes but described {len(SCENARIO_NODE_SPECS)}"
+        )
 
-    attempts = 0
-    while len(nodes) < NODE_COUNT:
-        center = choose_population_center(rng)
-        lat = rng.gauss(center.latitude, center.lat_spread)
-        lon = rng.gauss(center.longitude, center.lon_spread)
-        attempts += 1
-        if not is_land(lon, lat):
-            if attempts > NODE_COUNT * 10:
-                # Fallback in case of pathological polygons.
-                lon = max(-179.0, min(179.0, lon))
-                lat = max(-85.0, min(85.0, lat))
-                if not (is_on_land(lon, lat) or is_land(lon, lat)):
-                    continue
-            else:
-                continue
+    nodes: List[Node] = []
+    for idx, spec in enumerate(SCENARIO_NODE_SPECS):
+        lat = spec.latitude
+        lon = spec.longitude
+        for _ in range(40):
+            jittered_lat = rng.uniform(
+                spec.latitude - spec.lat_jitter, spec.latitude + spec.lat_jitter
+            )
+            jittered_lon = rng.uniform(
+                spec.longitude - spec.lon_jitter, spec.longitude + spec.lon_jitter
+            )
+            if is_land(jittered_lon, jittered_lat):
+                lat, lon = jittered_lat, jittered_lon
+                break
+        else:
+            if not is_land(lon, lat) and not is_on_land(lon, lat):
+                raise RuntimeError(
+                    f"Unable to place node '{spec.label}' on land using the provided map."
+                )
 
         x, y = projection.to_screen(lon, lat)
-        device_type = seeded_random_choice(rng, NODE_TYPE_DISTRIBUTION)
-        label, connectivity, summary = generate_node_metadata(
-            rng, len(nodes), device_type, center.name
+        summary = (
+            f"Type: {spec.device_type.title()}\n"
+            f"Location: {spec.location}, {spec.region}\n"
+            f"Connectivity: {', '.join(spec.connectivity)}\n"
+            f"Role: {spec.role}"
         )
+
         nodes.append(
             Node(
-                id=len(nodes),
+                id=idx,
                 x=x,
                 y=y,
-                device_type=device_type,
-                connectivity=connectivity,
-                label=label,
+                latitude=lat,
+                longitude=lon,
+                region=spec.region,
+                location=spec.location,
+                device_type=spec.device_type,
+                connectivity=spec.connectivity,
+                label=spec.label,
                 summary=summary,
             )
         )
-        attempts = 0
 
     return nodes
 
 
-def build_spatial_index(nodes: Sequence[Node], radius: float) -> Dict[Tuple[int, int], List[int]]:
-    cell_size = radius
-    grid: Dict[Tuple[int, int], List[int]] = {}
-    for idx, node in enumerate(nodes):
-        cell = int(node.x // cell_size), int(node.y // cell_size)
-        grid.setdefault(cell, []).append(idx)
-    return grid
+def build_connections() -> List[Connection]:
+    connections: List[Connection] = []
+    for spec in SCENARIO_CONNECTION_SPECS:
+        connections.append(
+            Connection(
+                source=spec.source,
+                target=spec.target,
+                medium=spec.medium,
+                description=spec.description,
+            )
+        )
+    return connections
 
 
-def build_neighbor_lists(nodes: Sequence[Node], radius: float) -> List[List[int]]:
-    grid = build_spatial_index(nodes, radius)
-    cell_size = radius
-    neighbor_lists: List[List[int]] = [[] for _ in nodes]
-
-    for idx, node in enumerate(nodes):
-        cx, cy = int(node.x // cell_size), int(node.y // cell_size)
-        nearby: List[int] = []
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                cell = (cx + dx, cy + dy)
-                nearby.extend(grid.get(cell, []))
-        for neighbor_idx in nearby:
-            if neighbor_idx == idx:
-                continue
-            neighbor = nodes[neighbor_idx]
-            dist = math.hypot(node.x - neighbor.x, node.y - neighbor.y)
-            if dist <= radius:
-                neighbor_lists[idx].append(neighbor_idx)
+def build_neighbor_lists_from_connections(
+    node_count: int, connections: Sequence[Connection]
+) -> List[List[int]]:
+    neighbor_lists: List[List[int]] = [[] for _ in range(node_count)]
+    for connection in connections:
+        neighbor_lists[connection.source].append(connection.target)
+        neighbor_lists[connection.target].append(connection.source)
+    for idx in range(node_count):
         neighbor_lists[idx] = sorted(set(neighbor_lists[idx]))
-
     return neighbor_lists
 
 
@@ -563,10 +640,75 @@ def draw_nodes(surface: pygame.Surface, nodes: Sequence[Node]) -> None:
         pygame.draw.circle(surface, color, (int(node.x), int(node.y)), NODE_RADIUS)
 
 
+def draw_connections(
+    surface: pygame.Surface,
+    nodes: Sequence[Node],
+    connections: Sequence[Connection],
+    hovered: Optional[Connection] = None,
+) -> None:
+    for connection in connections:
+        source = nodes[connection.source]
+        target = nodes[connection.target]
+        compromised = source.state == "infected" or target.state == "infected"
+        color = CONNECTION_COMPROMISED_COLOR if compromised else CONNECTION_SECURE_COLOR
+        width = 4 if hovered is connection else 2
+        pygame.draw.line(
+            surface,
+            color,
+            (int(source.x), int(source.y)),
+            (int(target.x), int(target.y)),
+            width,
+        )
+
+
 def wrap_text_lines(text: str, width: int = 34) -> List[str]:
     if not text:
         return []
     return textwrap.wrap(text, width=width)
+
+
+def _point_to_segment_distance(
+    px: float, py: float, ax: float, ay: float, bx: float, by: float
+) -> float:
+    abx = bx - ax
+    aby = by - ay
+    if abx == 0 and aby == 0:
+        return math.hypot(px - ax, py - ay)
+    t = ((px - ax) * abx + (py - ay) * aby) / (abx * abx + aby * aby)
+    t = max(0.0, min(1.0, t))
+    closest_x = ax + t * abx
+    closest_y = ay + t * aby
+    return math.hypot(px - closest_x, py - closest_y)
+
+
+def find_connection_under_point(
+    connections: Sequence[Connection],
+    nodes: Sequence[Node],
+    pos: Tuple[int, int],
+    threshold: float = 6.0,
+) -> Optional[Connection]:
+    px, py = pos
+    for connection in connections:
+        source = nodes[connection.source]
+        target = nodes[connection.target]
+        distance = _point_to_segment_distance(px, py, source.x, source.y, target.x, target.y)
+        if distance <= threshold:
+            return connection
+    return None
+
+
+def format_connection_description(
+    connection: Connection, nodes: Sequence[Node]
+) -> List[str]:
+    source = nodes[connection.source]
+    target = nodes[connection.target]
+    compromised = source.state == "infected" or target.state == "infected"
+    status = "Compromised" if compromised else "Secure"
+    lines = [f"{source.label} ↔ {target.label}", ""]
+    lines.append(f"Medium: {connection.medium}")
+    lines.extend(wrap_text_lines(f"Detail: {connection.description}", width=38))
+    lines.append(f"Status: {status}")
+    return lines
 
 
 def draw_tooltip(
@@ -787,7 +929,8 @@ def main() -> None:
     )
 
     nodes = generate_nodes(rng, projection, land_classifier)
-    neighbors = build_neighbor_lists(nodes, CONNECTION_RADIUS)
+    connections = build_connections()
+    neighbors = build_neighbor_lists_from_connections(len(nodes), connections)
 
     # Infect a single random node to start the outbreak.
     patient_zero = rng.randrange(len(nodes))
@@ -852,9 +995,11 @@ def main() -> None:
         screen.blit(background_surface, background_rect)
         draw_labels(screen, label_font, projection)
 
+        mouse_pos = pygame.mouse.get_pos()
+        hovered_connection = find_connection_under_point(connections, nodes, mouse_pos)
+        draw_connections(screen, nodes, connections, hovered_connection)
         draw_nodes(screen, nodes)
 
-        mouse_pos = pygame.mouse.get_pos()
         hovered_node = find_node_under_point(nodes, mouse_pos)
 
         if hovered_node:
@@ -928,6 +1073,19 @@ def main() -> None:
                 screen,
                 tooltip_font,
                 format_node_description(hovered_node),
+                (mouse_pos[0] + 16, mouse_pos[1] + 16),
+            )
+
+        elif (
+            hovered_connection
+            and not (
+                active_panel == "upgrades" and panel_rect.collidepoint(mouse_pos)
+            )
+        ):
+            draw_tooltip(
+                screen,
+                tooltip_font,
+                format_connection_description(hovered_connection, nodes),
                 (mouse_pos[0] + 16, mouse_pos[1] + 16),
             )
 
